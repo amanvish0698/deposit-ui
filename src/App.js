@@ -11,6 +11,20 @@ export default function DepositConfirmationModule() {
   const [rejected, setRejected] = useState(false);
   const [approverTime, setApproverTime] = useState("");
 
+  // simple filter state for maker/approver listing
+  const [makerFilters, setMakerFilters] = useState({
+    loan: "",
+    bucket: "",
+    status: "",
+    branch: "",
+  });
+  const [approverFilters, setApproverFilters] = useState({
+    maker: "",
+    branch: "",
+    status: "",
+    loan: "",
+  });
+
   // helper to produce a random 10-digit mobile number starting with 9
   const getRandomMobile = () => {
     // generate a number between 9000000000 and 9999999999
@@ -27,7 +41,17 @@ export default function DepositConfirmationModule() {
   const [records, setRecords] = useState(() => {
     try {
       const stored = localStorage.getItem("dc_records");
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const arr = JSON.parse(stored);
+        // normalize old statuses and ensure new fields exist
+        return arr.map((r) => ({
+          ...r,
+          status: r.status === "Pending Approval" ? "Submitted" : r.status,
+          branch: r.branch || "",
+          approver: r.approver || "",
+          rejectRemark: r.rejectRemark || "",
+        }));
+      }
     } catch (e) {
       console.warn("failed to parse stored records", e);
     }
@@ -42,6 +66,9 @@ export default function DepositConfirmationModule() {
         charges: "0",
         bucket: "90+",
         mobile: getRandomMobile(),
+        branch: "",
+        approver: "",
+        rejectRemark: "",
         makerTime: "NA",
         approverTime: "NA",
         status: "Draft",
@@ -57,6 +84,9 @@ export default function DepositConfirmationModule() {
         charges: "0",
         bucket: "90+",
         mobile: getRandomMobile(),
+        branch: "",
+        approver: "",
+        rejectRemark: "",
         makerTime: "NA",
         approverTime: "NA",
         status: "Draft",
@@ -72,7 +102,7 @@ export default function DepositConfirmationModule() {
   const statusBadge = (status) => {
     const map = {
       Draft: "bg-gray-400",
-      "Pending Approval": "bg-orange-500",
+      Submitted: "bg-blue-500",
       Approved: "bg-green-600",
       Rejected: "bg-red-600",
     };
@@ -195,6 +225,7 @@ export default function DepositConfirmationModule() {
         const copy = [...prev];
         copy[currentIndex].approverTime = time;
         copy[currentIndex].status = "Approved";
+        copy[currentIndex].rejectRemark = "";
         return copy;
       });
     }
@@ -214,6 +245,7 @@ export default function DepositConfirmationModule() {
         const copy = [...prev];
         copy[currentIndex].approverTime = time;
         copy[currentIndex].status = "Rejected";
+        copy[currentIndex].rejectRemark = rejectionRemark;
         return copy;
       });
     }
@@ -300,11 +332,12 @@ export default function DepositConfirmationModule() {
         const copy = [...prev];
         copy[currentIndex] = {
           ...copy[currentIndex],
-          status: "Pending Approval",
+          status: "Submitted",
           makerTime: new Date().toLocaleString(),
           rows,
           branch,
           approver,
+          rejectRemark: "",
         };
         return copy;
       });
@@ -324,6 +357,24 @@ export default function DepositConfirmationModule() {
       console.warn("failed to save records", e);
     }
   }, [records]);
+
+  // apply filters to the lists before rendering
+  const makerList = records.filter((r) => {
+    if (makerFilters.loan && !r.loan.toLowerCase().includes(makerFilters.loan.toLowerCase())) return false;
+    if (makerFilters.bucket && r.bucket !== makerFilters.bucket) return false;
+    if (makerFilters.status && r.status !== makerFilters.status) return false;
+    if (makerFilters.branch && r.branch !== makerFilters.branch) return false;
+    return true;
+  });
+
+  const approverList = records.filter((r) => {
+    if (r.status !== "Submitted") return false; // approver only works on submitted
+    if (approverFilters.maker && r.userName !== approverFilters.maker) return false;
+    if (approverFilters.branch && r.branch !== approverFilters.branch) return false;
+    if (approverFilters.status && r.status !== approverFilters.status) return false;
+    if (approverFilters.loan && !r.loan.toLowerCase().includes(approverFilters.loan.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div className="min-h-screen p-6" style={{ background: "#ebedfa" }}>
@@ -350,12 +401,51 @@ export default function DepositConfirmationModule() {
         <>
           {makerView === "list" && (
             <>
-              <div className="bg-white rounded-2xl shadow p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3">
-                <select className="border p-2 rounded"><option>Filter by User Name</option></select>
-                <select className="border p-2 rounded"><option>Filter by Bucket Type</option></select>
-                <input placeholder="Search by Loan Number" className="border p-2 rounded" />
-                <button className="bg-blue-600 text-white rounded-lg">Go</button>
-                <button className="bg-gray-200 rounded-lg">Reset</button>
+              <div className="bg-white rounded-2xl shadow p-4 mb-6 grid grid-cols-1 md:grid-cols-6 gap-3">
+                <input
+                  placeholder="Loan Number"
+                  value={makerFilters.loan}
+                  onChange={(e) => setMakerFilters({ ...makerFilters, loan: e.target.value })}
+                  className="border p-2 rounded"
+                />
+                <select
+                  className="border p-2 rounded"
+                  value={makerFilters.bucket}
+                  onChange={(e) => setMakerFilters({ ...makerFilters, bucket: e.target.value })}
+                >
+                  <option value="">All Buckets</option>
+                  <option>90+</option>
+                  <option>30-60</option>
+                </select>
+                <select
+                  className="border p-2 rounded"
+                  value={makerFilters.status}
+                  onChange={(e) => setMakerFilters({ ...makerFilters, status: e.target.value })}
+                >
+                  <option value="">All Status</option>
+                  <option>Draft</option>
+                  <option>Submitted</option>
+                  <option>Approved</option>
+                  <option>Rejected</option>
+                </select>
+                <input
+                  placeholder="Branch"
+                  value={makerFilters.branch}
+                  onChange={(e) => setMakerFilters({ ...makerFilters, branch: e.target.value })}
+                  className="border p-2 rounded"
+                />
+                <button
+                  className="bg-blue-600 text-white rounded-lg"
+                  onClick={() => {}}
+                >
+                  Go
+                </button>
+                <button
+                  className="bg-gray-200 rounded-lg"
+                  onClick={() => setMakerFilters({ loan: "", bucket: "", status: "", branch: "" })}
+                >
+                  Reset
+                </button>
               </div>
 
               <div className="bg-white rounded-2xl shadow overflow-auto">
@@ -363,46 +453,42 @@ export default function DepositConfirmationModule() {
                   <thead className="bg-gray-100">
                     <tr>
                       <th className="p-3 text-center font-semibold">Sr No</th>
-                      <th className="p-3 text-center font-semibold">User ID</th>
-                      <th className="p-3 text-center font-semibold">User Name</th>
                       <th className="p-3">Loan Number</th>
                       <th className="p-3">Customer Name</th>
-                      <th className="p-3 text-center font-semibold">Total Dues</th>
-                      <th className="p-3 text-center font-semibold">EMI</th>
-                      <th className="p-3 text-center font-semibold">Charges</th>
-                      <th className="p-3 text-center font-semibold">Bucket</th>
                       <th className="p-3">Mobile</th>
-                      <th className="p-3 text-center font-semibold">MTD</th>
+                      <th className="p-3">Bucket</th>
+                      <th className="p-3">EMI</th>
+                      <th className="p-3">Total Dues</th>
+                      <th className="p-3">Branch</th>
                       <th className="p-3">Status</th>
-                      <th className="p-3 text-center font-semibold">Maker Time</th>
-                      <th className="p-3 text-center font-semibold">Approver Time</th>
-                      <th className="p-3 text-center font-semibold">Branch</th>
-                      <th className="p-3 text-center font-semibold">Approver</th>
+                      <th className="p-3">Maker Saved Time</th>
+                      <th className="p-3">Approver Time</th>
+                      <th className="p-3">Approver Name</th>
+                      <th className="p-3">Reject Remark</th>
                       <th className="p-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {records.map((rec, i) => (
+                    {makerList.map((rec, i) => (
                       <tr key={i} className="border-t">
                         <td className="p-3">{i + 1}</td>
-                        <td className="p-3 text-center whitespace-nowrap">{rec.userId}</td>
-                        <td className="p-3 text-center whitespace-nowrap">{rec.userName}</td>
                         <td className="p-3 text-center whitespace-nowrap">{rec.loan}</td>
                         <td className="p-3 text-center whitespace-nowrap">{rec.customerName}</td>
-                        <td className="p-3 text-center whitespace-nowrap">{rec.totalDues}</td>
-                        <td className="p-3 text-center whitespace-nowrap">{rec.emi}</td>
-                        <td className="p-3 text-center whitespace-nowrap">{rec.charges}</td>
-                        <td className="p-3 text-center whitespace-nowrap">{rec.bucket}</td>
                         <td className="p-3 text-center whitespace-nowrap">{rec.mobile}</td>
-                        <td className="p-3 text-center whitespace-nowrap">0</td>
+                        <td className="p-3 text-center whitespace-nowrap">{rec.bucket}</td>
+                        <td className="p-3 text-center whitespace-nowrap">{rec.emi}</td>
+                        <td className="p-3 text-center whitespace-nowrap">{rec.totalDues}</td>
+                        <td className="p-3 text-center whitespace-nowrap">{rec.branch || "-"}</td>
                         <td className="p-3 text-center whitespace-nowrap">{statusBadge(rec.status)}</td>
                         <td className="p-3 text-center whitespace-nowrap">{rec.makerTime}</td>
                         <td className="p-3 text-center whitespace-nowrap">{rec.approverTime}</td>
-                        <td className="p-3">{rec.branch || "-"}</td>
-                        <td className="p-3">{rec.approver || "-"}</td>
+                        <td className="p-3 text-center whitespace-nowrap">{rec.approver || "-"}</td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          {rec.status === "Rejected" ? rec.rejectRemark : ""}
+                        </td>
                         <td className="p-3">
                           <button
-                            onClick={() => openDetails(i)}
+                            onClick={() => openDetails(records.indexOf(rec))}
                             className="bg-blue-600 text-white px-4 py-1 rounded-lg"
                           >
                             {rec.status === "Draft" ? "Take Action" : "View Details"}
@@ -426,6 +512,9 @@ export default function DepositConfirmationModule() {
                     <div><b>Loan:</b> {records[currentIndex].loan}</div>
                     <div><b>Maker Time:</b> {records[currentIndex].makerTime}</div>
                     <div><b>Status:</b> {records[currentIndex].status}</div>
+                    {records[currentIndex].status === "Rejected" && (
+                      <div><b>Reject Remark:</b> {records[currentIndex].rejectRemark || "-"}</div>
+                    )}
                     <div><b>Approver Time:</b> {records[currentIndex].approverTime}</div>
                     <div><b>Account Status:</b> Active</div>
                     <div><b>HL Number:</b> {records[currentIndex].loan}</div>
@@ -673,12 +762,48 @@ export default function DepositConfirmationModule() {
           {approverView === "list" && (
             <>
               <div className="bg-white rounded-2xl shadow p-4 mb-6 grid grid-cols-1 md:grid-cols-6 gap-3">
-                <select className="border p-2 rounded"><option>Filter by Maker Name</option></select>
-                <select className="border p-2 rounded"><option>Filter by Branch</option></select>
-                <select className="border p-2 rounded"><option>Filter by Status</option></select>
-                <input placeholder="Search by Loan Number" className="border p-2 rounded" />
-                <button className="bg-blue-600 text-white rounded-lg">Go</button>
-                <button className="bg-gray-200 rounded-lg">Reset</button>
+                <select
+                  className="border p-2 rounded"
+                  value={approverFilters.maker}
+                  onChange={(e) => setApproverFilters({ ...approverFilters, maker: e.target.value })}
+                >
+                  <option value="">All Makers</option>
+                  {/* could dynamically populate maker names */}
+                </select>
+                <input
+                  placeholder="Branch"
+                  className="border p-2 rounded"
+                  value={approverFilters.branch}
+                  onChange={(e) => setApproverFilters({ ...approverFilters, branch: e.target.value })}
+                />
+                <select
+                  className="border p-2 rounded"
+                  value={approverFilters.status}
+                  onChange={(e) => setApproverFilters({ ...approverFilters, status: e.target.value })}
+                >
+                  <option value="">All Status</option>
+                  <option>Submitted</option>
+                  <option>Approved</option>
+                  <option>Rejected</option>
+                </select>
+                <input
+                  placeholder="Loan Number"
+                  className="border p-2 rounded"
+                  value={approverFilters.loan}
+                  onChange={(e) => setApproverFilters({ ...approverFilters, loan: e.target.value })}
+                />
+                <button
+                  className="bg-blue-600 text-white rounded-lg"
+                  onClick={() => {}}
+                >
+                  Go
+                </button>
+                <button
+                  className="bg-gray-200 rounded-lg"
+                  onClick={() => setApproverFilters({ maker: "", branch: "", status: "", loan: "" })}
+                >
+                  Reset
+                </button>
               </div>
 
               <div className="bg-white rounded-2xl shadow overflow-auto">
@@ -688,27 +813,39 @@ export default function DepositConfirmationModule() {
                       <th className="p-3">Sr No</th>
                       <th className="p-3">Loan Number</th>
                       <th className="p-3">Customer Name</th>
+                      <th className="p-3">Mobile</th>
                       <th className="p-3">Maker Name</th>
+                      <th className="p-3">Branch</th>
+                      <th className="p-3">Bucket</th>
+                      <th className="p-3">EMI</th>
+                      <th className="p-3">Total Dues</th>
                       <th className="p-3">Maker Saved Time</th>
                       <th className="p-3">Status</th>
+                      <th className="p-3">Approver Time</th>
                       <th className="p-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {records.map((rec, i) => (
+                    {approverList.map((rec, i) => (
                       <tr key={i} className="border-t">
                         <td className="p-3">{i + 1}</td>
                         <td>{rec.loan}</td>
                         <td>{rec.customerName}</td>
+                        <td>{rec.mobile}</td>
                         <td>{rec.userName}</td>
+                        <td>{rec.branch || "-"}</td>
+                        <td>{rec.bucket}</td>
+                        <td>{rec.emi}</td>
+                        <td>{rec.totalDues}</td>
                         <td>{rec.makerTime}</td>
                         <td>{statusBadge(rec.status)}</td>
+                        <td>{rec.approverTime}</td>
                         <td>
                           <button
-                            onClick={() => openReview(i)}
+                            onClick={() => openReview(records.indexOf(rec))}
                             className="bg-blue-600 text-white px-4 py-1 rounded-lg"
                           >
-                            {rec.status === "Pending Approval" ? "Take Action" : "View Details"}
+                            View Details
                           </button>
                         </td>
                       </tr>
@@ -728,6 +865,9 @@ export default function DepositConfirmationModule() {
                     <div><b>Loan:</b> {records[currentIndex].loan}</div>
                     <div><b>Maker Time:</b> {records[currentIndex].makerTime}</div>
                     <div><b>Status:</b> {records[currentIndex].status}</div>
+                    {records[currentIndex].status === "Rejected" && (
+                      <div><b>Reject Remark:</b> {records[currentIndex].rejectRemark || "-"}</div>
+                    )}
                     <div><b>Approver Time:</b> {records[currentIndex].approverTime}</div>
                     <div><b>Account Status:</b> Active</div>
                     <div><b>HL Number:</b> {records[currentIndex].loan}</div>
